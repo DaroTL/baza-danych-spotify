@@ -104,8 +104,6 @@ BEGIN
 END;
 $$;
 
-CALL add_to_playlist(10, 1);
-
 CREATE OR REPLACE PROCEDURE change_plan(u int, p int, d int DEFAULT 0)
 LANGUAGE plpgsql
 AS $$
@@ -117,6 +115,29 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE PROCEDURE add_generes(song int, generes e_GENERE ARRAY)
+LANGUAGE plpgsql
+AS $$
+DECLARE 
+x e_GENERE;
+
+BEGIN 
+	FOREACH x IN ARRAY generes LOOP 
+		IF ((SELECT count(songid) FROM song_has_geners WHERE songid = song AND genere = x) = 0) THEN 
+			INSERT INTO song_has_geners VALUES (song, x);
+		END IF;
+	END LOOP;
+END;
+$$;
+
+CREATE OR REPLACE PROCEDURE add_song(songid int, song_name varchar(50), duration TIME, album int, generes e_GENERE ARRAY)
+LANGUAGE plpgsql
+AS $$
+BEGIN 
+	INSERT INTO songs (songid, song_name, duration, album) VALUES (songid, song_name, duration, album);
+	CALL add_generes(songid, generes);
+END;
+$$;
 
 CREATE OR REPLACE FUNCTION update_plans() RETURNS trigger AS $update_plans$
 
@@ -128,18 +149,15 @@ BEGIN
 END;
 $update_plans$ LANGUAGE plpgsql;
 
-DROP PROCEDURE update_plans;
+
 
 CREATE TRIGGER premium_days_update_trigger
 	AFTER UPDATE OR INSERT OF premium_days ON users
 	FOR EACH ROW  
 	EXECUTE PROCEDURE update_plans();
 
-SELECT * FROM users;
-BEGIN;
-UPDATE users SET premium_days = 0 WHERE userid = 2;
-ROLLBACK;
-	
+
+
 CREATE VIEW example_weekly AS SELECT song_name FROM 
 (
 SELECT DISTINCT s.song_name 
@@ -270,6 +288,120 @@ SELECT * FROM city;
 SELECT * FROM users;
 
 
+--do statystyk
+
+
+
+SELECT c.country, (round(count(u.userid)/(SELECT count(userid) FROM users)::NUMERIC * 100, 2) ) FROM city AS c
+INNER JOIN users AS u 
+ON c.cityid = u.cityid 
+INNER JOIN "plans" AS p
+ON u.planid = p.planid 
+WHERE p.planid <> 5
+GROUP BY c.country 
+ORDER BY count(u.userid) DESC;
+ 
+SELECT g.genere, (round(count(uls.userid)/(SELECT count(userid) FROM user_likes_songs)::NUMERIC * 100, 2) )  FROM song_has_geners AS g
+INNER JOIN songs AS s 
+ON g.songid = s.songid 
+INNER JOIN user_likes_songs uls
+ON uls.songid = s.songid 
+GROUP BY g.genere
+ORDER BY count(uls.songid) DESC;
+
+SELECT p.plan_name, (round(count(u.planid)/(SELECT count(planid) FROM users)::NUMERIC * 100, 2) )
+FROM "plans" AS p
+INNER JOIN users AS u
+ON p.planid = u.planid
+GROUP BY p.plan_names
+ORDER BY count(u.userid) DESC;
+
+SELECT count(uls.songid), a.album_name FROM user_likes_songs uls 
+INNER JOIN songs s
+ON uls.songid = s.songid 
+INNER JOIN albums a 
+ON s.album  = a.albumid
+GROUP BY a.album_name
+ORDER BY count(uls.songid) DESC LIMIT 10;
+
+
+
+
+
+
+BEGIN;
+
+INSERT INTO artists 
+VALUES (22, 'Swirlies', 
+'Swirlies is an American indie rock band formed in Boston, Massachusetts in 1990.
+ Since their first records in the early 1990s, the band has released studio and home 
+recordings that blend shoegaze and twee pop with electronica and lo-fi music.', 
+59025, 23750);
+
+SAVEPOINT added_artist;
+
+INSERT INTO albums (albumid, album_name, artist, release_date) VALUES (26, 'Blonder Tongue Audio Baton', 22, '1993-02-06');
+
+SAVEPOINT added_album;
+
+CALL add_song (199,'Untitled', '00:00:12', 26, '{}');
+CALL add_song (200,'Bell', '00:04:30', 26, '{Shoegaze, Rock, Indie, Alternative-Rock}');
+CALL add_song (201,'Vigilant Always', '00:05:10', 26, '{Shoegaze, Rock, Indie, Alternative-Rock}');
+CALL add_song (202,'His Love Just Washed Away', '00:05:24', 26, '{Shoegaze, Rock, Indie, Alternative-Rock}');
+CALL add_song (203,'His Life Of Academic Freedom', '00:02:07', 26, '{Shoegaze, Rock, Indie, Alternative-Rock}');
+CALL add_song (204,'Pancake', '00:03:15', 26, '{Shoegaze, Rock, Indie, Alternative-Rock}');
+CALL add_song (205,'Jeremy Parker', '00:04:13', 26, '{Shoegaze, Rock, Indie, Alternative-Rock}');
+CALL add_song (206,'Park The Car By The Site Of The Road', '00:05:04', 26, '{Shoegaze, Rock, Indie, Alternative-Rock}');
+CALL add_song (207,'Tree Chopped Down', '00:03:11', 26, '{Shoegaze, Rock, Indie, Alternative-Rock}');
+CALL add_song (208,'Wrong Tube', '00:05:07', 26, '{Shoegaze, Rock, Indie, Alternative-Rock}');
+CALL add_song (209,'Wait Foreve', '00:04:18', 26, '{Shoegaze, Rock, Indie, Alternative-Rock}');
+
+
+ROLLBACK TO added_artist;
+ROLLBACK TO added_album;
+ROLLBACK;
+
+COMMIT;
+
+SELECT * FROM artists;
+SELECT * FROM albums;
+SELECT * FROM songs WHERE album = 26;
+SELECT * FROM song_has_geners shg WHERE songid IN (SELECT songid FROM songs WHERE album = 26) ORDER BY songid;
+
+
+
+
+BEGIN;
+
+SELECT songid FROM songs WHERE song_name = 'Pancake' AND album = 26;
+CALL like_song(204, 4);
+
+ROLLBACK;
+COMMIT;
+
+
+SELECT * FROM user_likes_songs uls
+INNER JOIN songs s 
+ON uls.songid  = s.songid 
+WHERE s.album = 26;
+
+
+
+BEGIN;
+
+INSERT INTO playlists (playlistid, playlist_name, create_date) 
+values(51, (SELECT song_name FROM songs WHERE songid = 2), current_timestamp);
+SAVEPOINT playlist_created;
+
+CALL add_to_playlist(51, 2);
+
+
+ROLLBACK;
+COMMIT;
+
+SELECT * FROM playlists;
+
+SELECT * FROM playlists_has_songs WHERE playlistid = 51;
 
 
 
